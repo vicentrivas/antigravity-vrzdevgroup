@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DASHBOARD API VRZ DEVELOPMENT E-NCF</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="grid">
+
+            <div>
+                <div class="card">
+                    <h2>1. Seleccionar Empresa</h2>
+                    <div class="form-group">
+                        <label>Empresa:</label>
+                        <select id="empresa_selector" onchange="seleccionarEmpresa()"></select>
+                    </div>
+
+                    <form id="regForm">
+                        <div class="form-group">
+                            <label>Certificado DGII (.p12) <span
+                                    style="font-weight:normal; font-size:0.7rem; color:#64748b;"></span></label>
+                            <input type="file" id="p12" accept=".p12">
+                        </div>
+                        <div class="form-group">
+                            <label>RNC Empresa</label>
+                            <input type="text" id="rnc_reg" readonly style="background:#f1f5f9;">
+                        </div>
+                        <div class="form-group">
+                            <label>Authorization Code (Manual / Temporal)</label>
+                            <input type="text" id="auth_code_manual" placeholder="Pega el código de 10 seg aquí..."
+                                style="border-color: var(--accent); font-weight: bold;">
+                        </div>
+                        <div class="form-group" style="display:none;">
+                            <input type="hidden" id="pass_reg">
+                            <input type="hidden" id="razon_reg">
+                            <input type="hidden" id="entorno_reg">
+                        </div>
+                        <button type="button" id="btnReg" onclick="registrarEmpresa()">Obtener Token Bitnova</button>
+                    </form>
+
+                    <div id="tokenArea" style="display:none;">
+                        <label style="margin-top:1rem;">Token de Acceso:</label>
+                        <div id="tokenValue" class="token-display"></div>
+                        <button type="button" style="background:#64748b; margin-top:0.5rem;" onclick="validarToken()">
+                            Validar identidad</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Log</h2>
+                    <div id="logReg" class="log">Esperando registro...</div>
+                </div>
+            </div>
+
+            <!-- COLUMNA 2: OPERACIÓN -->
+            <div>
+                <div id="colPaso2" class="card disabled">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2> 2. Enviar e-CF</h2>
+                        <span id="labelEmpresaActiva" class="badge-empresa">Sin Empresa</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Tipo de Documento</label>
+                        <select id="doc_type" onchange="updateJsonTemplate()">
+                            <option value="E31">E31 - Crédito Fiscal</option>
+                            <option value="E32">E32 - Consumo</option>
+                            <option value="E33">E33 - Notas de Débito (Pendiente)</option>
+                            <option value="E34">E34 - Notas de Crédito (Pendiente)</option>
+                        </select>
+                    </div>
+
+                    <div class="card" style="border: 1px solid #e2e8f0; margin-bottom: 1rem; padding: 0.8rem;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <h3 style="margin:0; font-size: 0.85rem;"> Ventas (Etrack)</h3>
+                            <select id="user_selector" style="font-size: 0.7rem; padding: 0.15rem; width: 120px;"
+                                onchange="cargarVentas()"></select>
+                        </div>
+
+                        <div class="grid"
+                            style="grid-template-columns: 1fr 1fr auto; gap: 0.5rem; margin-bottom: 1rem;">
+                            <div class="form-group">
+                                <label style="font-size: 0.65rem;">Desde</label>
+                                <input type="date" id="fecha_desde" style="padding: 0.2rem; font-size: 0.75rem;">
+                            </div>
+                            <div class="form-group">
+                                <label style="font-size: 0.65rem;">Hasta</label>
+                                <input type="date" id="fecha_hasta" style="padding: 0.2rem; font-size: 0.75rem;">
+                            </div>
+                            <div class="form-group" style="display: flex; align-items: flex-end;">
+                                <button onclick="cargarVentas()"
+                                    style="padding: 0.3rem 0.6rem; font-size: 0.7rem; width: auto;">Buscar</button>
+                            </div>
+                        </div>
+
+                        <div style="max-height: 250px; overflow-y: auto;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.7rem;">
+                                <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10;">
+                                    <tr>
+                                        <th style="text-align: left; padding: 0.3rem;">NCF</th>
+                                        <th style="text-align: left; padding: 0.3rem;">Cliente</th>
+                                        <th style="text-align: right; padding: 0.3rem;">Total</th>
+                                        <th style="text-align: center; padding: 0.3rem;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="listaVentasBody">
+                                    <tr>
+                                        <td colspan="4" style="text-align: center; padding: 1rem; color: #94a3b8;">Sin
+                                            datos</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="display: none;">
+                        <label>Estructura JSON (e-CF)</label>
+                        <textarea id="invoice_data" rows="10"
+                            style="font-family: monospace; font-size: 0.7rem;"></textarea>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+                        <button type="button" id="btnSend" onclick="enviarFacturaReal()" style="flex: 2;">Enviar Factura
+                            a DGII</button>
+
+                    </div>
+                    <div id="logSend" class="log" style="margin-top:1rem; height: 100px;">Esperando envío...</div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let empresas = [];
+        const templates = {
+            E31: {
+                iddoc: { tipoecf: "31", encf: "E310000000001", fechavencimientosecuencia: "31-12-2028", tipoingresos: "01", tipopago: "1", indicadormontogravado: "0" },
+                datos_adicionales: { fechaemision: new Date().toLocaleDateString('es-DO').replace(/\//g, '-'), numerofacturainterna: "", numeropedidointerno: "", zonaventa: "GENERAL", codigovendedor: "001" },
+                comprador: { rnccomprador: "131793916", razonsocialcomprador: "CLIENTE SRL", correocomprador: "cliente@correo.com", direccioncomprador: "SANTO DOMINGO, RD", municipiocomprador: "010100", provinciacomprador: "010000", fechaordencompra: "", numeroordencompra: "", codigointernocomprador: "", contactocomprador: "CONTACTO", fechaentrega: "" },
+                totales: { montogravadototal: "1000.00", montogravadoi1: "1000.00", totalitbis1: "180.00", montototal: "1180.00", itbis1: "18", totalitbis: "180.00" },
+                items: { "1": { NombreItem: "PRODUCTO EJEMPLO", NumeroLinea: "1", IndicadorFacturacion: "1", CantidadItem: "1.00", UnidadMedida: "31", PrecioUnitarioItem: "1000.00", MontoItem: "1000.00", IndicadorBienOServicio: "1" } }
+            },
+            E32: {
+                iddoc: { tipoecf: "32", encf: "E320000000001", fechavencimientosecuencia: "31-12-2028", tipoingresos: "01", tipopago: "1", indicadormontogravado: "0" },
+                datos_adicionales: { fechaemision: new Date().toLocaleDateString('es-DO').replace(/\//g, '-'), numerofacturainterna: "", numeropedidointerno: "", zonaventa: "GENERAL", codigovendedor: "001" },
+                comprador: { rnccomprador: "", razonsocialcomprador: "CONSUMIDOR FINAL", correocomprador: "cliente@correo.com", direccioncomprador: "SANTO DOMINGO, RD", municipiocomprador: "010100", provinciacomprador: "010000", fechaordencompra: "", numeroordencompra: "", codigointernocomprador: "", contactocomprador: "CONTACTO", fechaentrega: "" },
+                totales: { montogravadototal: "500.00", montogravadoi1: "500.00", totalitbis1: "90.00", montototal: "590.00", itbis1: "18", totalitbis: "90.00" },
+                items: { "1": { NombreItem: "CONSUMO EJEMPLO", NumeroLinea: "1", IndicadorFacturacion: "1", CantidadItem: "1.00", UnidadMedida: "31", PrecioUnitarioItem: "500.00", MontoItem: "500.00", IndicadorBienOServicio: "1" } }
+            }
+        };
+
+        async function cargarEmpresas() {
+            try {
+                // Inicializar fechas por defecto (Desde 2024 para cubrir historial)
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('fecha_desde').value = '2024-01-01';
+                document.getElementById('fecha_hasta').value = today;
+
+                const response = await fetch('/real/empresas');
+                empresas = await response.json();
+                const selector = document.getElementById('empresa_selector');
+                selector.innerHTML = '<option value="">-- Selecciona Empresa --</option>';
+                empresas.forEach(emp => {
+                    selector.innerHTML += `<option value="${emp.idempresas}">${emp.empresa} (${emp.rnc})</option>`;
+                });
+            } catch (err) { log('logReg', "Error cargando empresas: " + err.message); }
+        }
+
+        async function seleccionarEmpresa() {
+            const id = document.getElementById('empresa_selector').value;
+            const emp = empresas.find(e => e.idempresas == id);
+            if (emp) {
+                document.getElementById('rnc_reg').value = emp.rnc;
+                document.getElementById('pass_reg').value = emp.p12_pss;
+                document.getElementById('entorno_reg').value = emp.entorno || 'prueba';
+                document.getElementById('labelEmpresaActiva').innerText = emp.empresa;
+
+                const previewJSON = {
+                    data: {
+                        rnc: emp.rnc,
+                        razon_social: emp.empresa,
+                        nombre_comercial: emp.empresa,
+                        direccion: emp.direccion,
+                        municipio: emp.municipio || "010101",
+                        provincia: emp.provincia || "010000",
+                        telefono: emp.telefono || "849-220-0666",
+                        email: emp.mail || emp.email || "notienecorreo@vrzdevgroup.com",
+                        p12_pss: emp.p12_pss,
+                        entorno: emp.entorno || 'prueba'
+                    }
+                };
+
+                log('logReg', `Estructura de la empresa:`, previewJSON);
+
+                // --- HABILITAR PASO 2 SI YA HAY TOKEN ---
+                if (emp.authorizationcode && emp.authorizationcode.length > 10) {
+                    document.getElementById('tokenValue').innerText = emp.authorizationcode;
+                    document.getElementById('tokenArea').style.display = 'block';
+                    document.getElementById('colPaso2').classList.remove('disabled');
+                    log('logReg', `El Token existe y ha sido detectado. Puede facturar.`);
+                    validarToken();
+                }
+
+                // Cargar Usuarios de esta empresa
+                try {
+                    const resUsers = await fetch(`/real/usuarios?idEmpresa=${id}`);
+                    const users = await resUsers.json();
+                    const userSel = document.getElementById('user_selector');
+                    userSel.innerHTML = '';
+                    users.forEach(u => {
+                        userSel.innerHTML += `<option value="${u.idusuario}">${u.username}</option>`;
+                    });
+
+                    // Si hay token y usuarios, cargar ventas
+                    if (emp.authorizationcode && users.length > 0) {
+                        // Seleccionamos el primer usuario por defecto para que cargue algo
+                        if (!userSel.value && users.length > 0) userSel.value = users[0].idusuario;
+                        log('logReg', `[SISTEMA] Empresa lista. Cargando facturas...`);
+                        setTimeout(() => cargarVentas(), 300);
+                    }
+                } catch (err) {
+                    log('logReg', "Error cargando usuarios: " + err.message);
+                }
+
+            } else {
+                document.getElementById('rnc_reg').value = '';
+                document.getElementById('labelEmpresaActiva').innerText = 'Sin Empresa';
+                document.getElementById('tokenArea').style.display = 'none';
+                document.getElementById('colPaso2').classList.add('disabled');
+            }
+        }
+
+        function updateJsonTemplate() {
+            const type = document.getElementById('doc_type').value;
+            const template = templates[type] || templates.E31;
+            document.getElementById('invoice_data').value = JSON.stringify(template, null, 2);
+        }
+
+        function log(elementId, msg, obj = null) {
+            const el = document.getElementById(elementId);
+            const time = new Date().toLocaleTimeString();
+            let html = `<div><span style="color:#94a3b8">[${time}]</span> ${msg}</div>`;
+            if (obj) {
+                const jsonStr = JSON.stringify(obj, null, 2);
+                html += `<pre style="margin: 0.5rem 0; color:#22c55e; background:#1e293b; padding:0.5rem; border-radius:0.3rem;">${jsonStr}</pre>`;
+            }
+
+            // Si es el primer mensaje, limpiamos el "Esperando..."
+            if (el.innerText.includes("Esperando")) el.innerHTML = '';
+
+            el.insertAdjacentHTML('beforeend', html);
+            el.scrollTop = el.scrollHeight;
+        }
+
+        async function registrarEmpresa() {
+            const btn = document.getElementById('btnReg');
+            const fileInput = document.getElementById('p12');
+            const id = document.getElementById('empresa_selector').value;
+            const emp = empresas.find(e => e.idempresas == id);
+
+            if (!emp) return alert("Selecciona una empresa primero.");
+
+            btn.disabled = true;
+            log('logReg', "Iniciando registro en Bitnova...");
+            const formData = new FormData();
+            if (fileInput.files[0]) formData.append('archivo_p12', fileInput.files[0]);
+
+            const data = {
+                data: {
+                    rnc: emp.rnc,
+                    razon_social: emp.empresa,
+                    nombre_comercial: emp.empresa,
+                    direccion: emp.direccion,
+                    municipio: emp.municipio || "010101",
+                    provincia: emp.provincia || "010000",
+                    telefono: emp.telefono || "849-220-0666",
+                    email: emp.mail || emp.email || "contacto@vrzdevgroup.com",
+                    p12_pss: emp.p12_pss,
+                    entorno: emp.entorno || 'prueba',
+                    authorizationcode: document.getElementById('auth_code_manual').value || emp.authorizationcode,
+                    archivo_p12_path: emp.archivo_p12
+                }
+            };
+            formData.append('data', JSON.stringify(data));
+
+            try {
+                const response = await fetch('/real/registrar-empresa', { method: 'PUT', body: formData });
+                const result = await response.json();
+                if (response.ok) {
+                    const token = result.Authorization || result.authorization || result.token || (result.data && result.data.token);
+                    if (token) {
+                        document.getElementById('tokenValue').innerText = token;
+                        document.getElementById('tokenArea').style.display = 'block';
+                        document.getElementById('colPaso2').classList.remove('disabled');
+                        log('logReg', " Éxito! Respuesta de registro:", result);
+                        setTimeout(() => validarToken(), 500);
+                    } else {
+                        log('logReg', " No se encontró el token en la respuesta:", result);
+                    }
+                } else {
+                    log('logReg', "Error en Registro:", result);
+                }
+            } catch (err) { log('logReg', "Error: " + err.message); } finally { btn.disabled = false; }
+        }
+
+        async function validarToken() {
+            const token = document.getElementById('tokenValue').innerText;
+            if (!token) return; // No validar si no hay token
+            log('logReg', "Validando identidad...");
+            try {
+                // Aqui le quite el Bearer
+                const response = await fetch('/real/validar-token', { headers: { 'Authorization': `${token}` } });
+                const result = await response.json();
+                if (response.ok) {
+                    const user = result.usuarios[0];
+                    log('logReg', `Identidad confirmada, resultado/json de la api:`, result);
+                } else {
+                    log('logReg', `Error de validación:`, result);
+                }
+            } catch (err) { log('logReg', "Error: " + err.message); }
+        }
+
+        async function enviarFacturaReal() {
+            const btn = document.getElementById('btnSend');
+            const token = document.getElementById('tokenValue').innerText;
+            const invoiceData = document.getElementById('invoice_data').value;
+            btn.disabled = true;
+
+            try {
+                const data = JSON.parse(invoiceData);
+
+                log('logSend', "Preparando envío real a DGII...");
+                const headers = {
+                    "Authorization": `${token}`,
+                    "Content-Type": "application/json"
+                };
+                log('logSend', "headers =", headers);
+                log('logSend', "datos_factura =", data);
+
+                const response = await fetch('/real/enviar-factura', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token, data })
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    log('logSend', `Factura Aceptada:`, result);
+                } else {
+                    log('logSend', "Factura Rechazada:", result);
+                }
+                if (result.headers_enviados) {
+                    log('logSend', `[DEBUG] Headers utilizados:`, result.headers_enviados);
+                }
+            } catch (err) {
+                log('logSend', "Error: " + err.message);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function cargarVentas() {
+            const idUsuario = document.getElementById('user_selector').value;
+            const desde = document.getElementById('fecha_desde').value;
+            const hasta = document.getElementById('fecha_hasta').value;
+
+            if (!idUsuario) {
+                log('logReg', "Selecciona un usuario para cargar sus facturas.");
+                return;
+            }
+
+            log('logReg', `Cargando ventas para el ID Usuario: ${idUsuario} entre ${desde} y ${hasta}...`);
+
+            const body = document.getElementById('listaVentasBody');
+            body.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 1rem;">Cargando...</td></tr>';
+
+            try {
+                const url = `/real/listado-facturas?idUsuario=${idUsuario}&desde=${desde}&hasta=${hasta}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                body.innerHTML = '';
+
+                if (!data || data.length === 0) {
+                    body.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 1rem;">No se encontraron ventas. Prueba con otro usuario o rango de fechas.</td></tr>';
+                    log('logReg', ` No hay facturas para el usuario ${idUsuario} en este rango.`);
+                    return;
+                }
+
+                log('logReg', ` Se cargaron ${data.length} facturas.`);
+                data.forEach(venta => {
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = "1px solid #f1f5f9";
+                    tr.innerHTML = `
+                        <td style="padding: 0.5rem; font-weight: 600;">${venta.ncf || 'S/N'}</td>
+                        <td style="padding: 0.5rem;">${venta.cliente}</td>
+                        <td style="padding: 0.5rem; text-align: right;">${parseFloat(venta.total).toLocaleString()}</td>
+                        <td style="padding: 0.5rem; text-align: center; display: flex; gap: 0.3rem; justify-content: center;">
+                            <button onclick='enviarPorID(${venta.idfacturacuotas})' style="padding: 0.2rem 0.5rem; font-size: 0.65rem; background: #22c55e; width: auto;">Cargar venta</button>
+                        </td>
+                    `;
+                    body.appendChild(tr);
+                });
+            } catch (err) {
+                body.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 1rem; color: #ef4444;">Error cargando ventas</td></tr>';
+                log('logReg', " Error al cargar facturas de la DB.");
+                console.error(err);
+            }
+        }
+
+
+
+        async function enviarPorID(idFacturaCuota) {
+            const token = document.getElementById('tokenValue').innerText;
+            if (!token) return alert("Selecciona una empresa para obtener el token primero.");
+
+            try {
+                log('logSend', ` Iniciando envío automático para ID: ${idFacturaCuota}...`);
+
+                const headers = {
+                    "Authorization": `${token}`,
+                    "Content-Type": "application/json"
+                };
+
+                log('logSend', "headers =", headers);
+                log('logSend', "[El backend generará los 'datos_factura' automáticamente.");
+
+                const response = await fetch('/real/enviar-factura-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ idFacturaCuota, token })
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    log('logSend', ` Envío Automático Exitoso:`, result);
+                    // Mostrar el JSON generado en el editor
+                    if (result.json_enviado) {
+                        document.getElementById('invoice_data').value = JSON.stringify(result.json_enviado, null, 2);
+                        log('logSend', `JSON cargado en el editor para inspección.`);
+                    }
+                } else {
+                    log('logSend', `Fallo en Envío Automático:`, result);
+                    if (result.json_enviado) {
+                        document.getElementById('invoice_data').value = JSON.stringify(result.json_enviado, null, 2);
+                        log('logSend', ` JSON del error cargado en el editor.`);
+                    }
+                }
+                if (result.headers_enviados) {
+                    log('logSend', ` Headers utilizados:`, result.headers_enviados);
+                }
+            } catch (err) {
+                log('logSend', ` Error de conexión: ${err.message}`);
+            }
+        }
+
+
+        async function debugDB() {
+            try {
+                const response = await fetch('/real/debug-db');
+                const data = await response.json();
+                const tablas = data.tablas.map(t => Object.values(t)[0]).join(', ');
+                alert("Tablas en DB: " + tablas);
+            } catch (err) { alert("Error: " + err.message); }
+        }
+
+        // Inicio
+        cargarEmpresas();
+        updateJsonTemplate();
+    </script>
+
+</body>
+
+</html>
