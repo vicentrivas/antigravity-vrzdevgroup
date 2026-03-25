@@ -207,7 +207,6 @@ app.post('/real/enviar-factura-id', async (req, res) => {
             iddoc: {
                 tipoecf: tipoEcf,
                 encf: ncfEcf,
-                fechavencimientosecuencia: "31-12-2028",
                 tipoingresos: "01",
                 tipopago: (v.formapago || 1).toString(),
                 indicadormontogravado: v.cuota_itbis > 0 ? "1" : "0"
