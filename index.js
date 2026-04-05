@@ -150,7 +150,7 @@ app.get('/real/validar-token', async (req, res) => {
  * @route POST /real/enviar-factura-id
  * @desc Genera el JSON e-CF automáticamente desde el ID de la factura y la envía
  */
-app.post('/real/enviar-factura-id', async (req, res) => {
+app.post('/real/cargar-venta-by-idfacturacuota', async (req, res) => {
     const { idFacturaCuota, token: providedToken } = req.body;
     if (!pool) return res.status(503).json({ error: "DB no disponible" });
     if (!idFacturaCuota) return res.status(400).json({ error: "Falta idFacturaCuota" });
@@ -160,7 +160,7 @@ app.post('/real/enviar-factura-id', async (req, res) => {
         const [rows] = await pool.query(`
             SELECT 
                 f.idfactura, fc.idfacturacuotas, fc.ncf, fc.montobruto as cuota_bruto, fc.itbis as cuota_itbis, fc.total as cuota_total, fc.referenciafactura,
-                f.fecha, f.idempresas,
+                DATE_FORMAT(f.fecha,'%d-%m-%Y') fecha, f.idempresas,
                 p.nombres, p.apellidos, p.identificacion as cliente_identificacion, p.correoelectronico,
                 e.empresa as emisor_nombre, e.rnc as emisor_rnc, e.authorizationcode as emisor_token
             FROM facturacuotas fc
@@ -175,9 +175,7 @@ app.post('/real/enviar-factura-id', async (req, res) => {
         const v = rows[0];
         const token = (providedToken || v.emisor_token || "").trim();
 
-
-        const iden = (v.cliente_identificacion || "").replace(/-/g, '').trim();
-        const isRNC = iden.length === 9;
+        const isRNC = v.cliente_identificacion.length === 9;
 
         // Determinación de tipo ECF y prefijo NCF esto mas adelante debe ser dinamico desde la db
         let ncfOriginal = v.ncf || "";
@@ -192,16 +190,13 @@ app.post('/real/enviar-factura-id', async (req, res) => {
             tipoEcf = ncfOriginal.substring(1, 3);
         }
 
-        const formatDate = (date) => {
-            const d = new Date(date);
-            const day = String(d.getDate()).padStart(2, '0');
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const year = d.getFullYear();
-            return `${day}-${month}-${year}`;
-        };
 
-        const fechaHoy = formatDate(new Date());
-        const fechaEmision = v.fecha ? formatDate(v.fecha) : fechaHoy;
+
+        // const fechaHoy = new Date().toISOString().split('T')[0];
+        // const fechaEmision = v.fecha
+        //     ? new Date(v.fecha).toISOString().split('T')[0]
+        //     : fechaHoy;
+
 
         const eCF = {
             iddoc: {
@@ -212,14 +207,14 @@ app.post('/real/enviar-factura-id', async (req, res) => {
                 indicadormontogravado: v.cuota_itbis > 0 ? "1" : "0"
             },
             datos_adicionales: {
-                fechaemision: fechaEmision,
+                fechaemision: v.fecha,
                 numerofacturainterna: (v.idfacturacuotas || "").toString(),
                 numeropedidointerno: (v.referenciafactura || "").toString(),
                 zonaventa: "GENERAL",
                 codigovendedor: "001"
             },
             comprador: {
-                rnccomprador: iden,
+                rnccomprador: v.cliente_identificacion,
                 razonsocialcomprador: `${v.nombres || ''} ${v.apellidos || ''}`.trim() || "CONSUMIDOR FINAL",
                 correocomprador: (v.correoelectronico && v.correoelectronico.includes('@')) ? v.correoelectronico.trim().toUpperCase() : "VICENTRIVASZORRILLA@GMAIL.COM",
                 direccioncomprador: (v.direccion || "SANTO DOMINGO, RD").replace(/[\.,]/g, ''),
@@ -270,9 +265,139 @@ app.post('/real/enviar-factura-id', async (req, res) => {
             ncf: eCF.iddoc.encf,
             receptor: eCF.comprador.razonsocialcomprador,
             monto: eCF.totales.montototal,
-            timestamp: new Date().toISOString()
+            timestamp: new Date()
         }, null, 2));
         console.log("==========================================\n");
+
+        // 3. Enviar a Bitnova
+        console.log(` Enviando a Bitnova para ID ${idFacturaCuota}...`);
+
+        const bitnovaUrl = "https://api.bitnovaservices.com/api/v1/dgii";
+        let resultData;
+        let httpStatus = 200;
+
+        const headers = {
+            'Authorization': `${token}`,
+            'Content-Type': 'application/json'
+        };
+
+        console.log("[HTTP REQUEST] POST", bitnovaUrl);
+        console.log("[HTTP REQUEST] Headers:", JSON.stringify(headers, null, 2));
+
+
+        try {
+            const response = await axios.post(bitnovaUrl, eCF, {
+                headers: headers,
+                timeout: 60000
+            });
+            resultData = { ...response.data, json_enviado: eCF };
+        } catch (axiosError) {
+            console.error(" Error enviando a Bitnova:", axiosError.response?.data || axiosError.message);
+            httpStatus = axiosError.response?.status || 500;
+            resultData = {
+                ...(axiosError.response?.data || {}),
+                error_local: axiosError.message,
+                estado: axiosError.response?.data?.estado || "Rechazado LOCAL MENSAJE",
+                json_enviado: eCF
+            };
+        }
+
+
+        res.status(httpStatus).json(resultData);
+
+    } catch (error) {
+        console.error("Error en envío automático:", error.response?.data || error.message);
+        res.status(error.response?.status || 500).json(error.response?.data || { error: "Error en proceso automático" });
+    }
+});
+
+
+app.post('/real/enviar-factura-id', async (req, res) => {
+    const { idFacturaCuota, token: providedToken } = req.body;
+    if (!pool) return res.status(503).json({ error: "DB no disponible" });
+    if (!idFacturaCuota) return res.status(400).json({ error: "Falta idFacturaCuota" });
+
+    try {
+        const [rows] = await pool.query(`call loadDatosFacturaCuotasDgii(?)`,
+            [idFacturaCuota]);
+        if (rows.length === 0) return res.status(404).json({ error: "No se encontró la cuota de factura" });
+        const v = rows[0][0];
+        const token = (providedToken || v.emisor_token || "").trim();
+        const isRNC = v.cliente_identificacion && v.cliente_identificacion.length === 9;
+        let ncfOriginal = v.ncf || "";
+        let tipoEcf = isRNC ? "31" : "32";
+        if (ncfOriginal.startsWith('E')) {
+
+            tipoEcf = ncfOriginal.substring(1, 3);
+        }
+
+        const fechaEmision = v.fecha;
+        const eCF = {
+            iddoc: {
+                tipoecf: tipoEcf,
+                encf: v.ncf,
+                tipoingresos: "01",
+                tipopago: (v.formapago || 1).toString()
+            },
+            datos_adicionales: {
+                fechaemision: fechaEmision,
+                numerofacturainterna: (v.idfacturacuotas || "").toString(),
+                numeropedidointerno: (v.referenciafactura || "").toString(),
+                zonaventa: "GENERAL",
+                codigovendedor: "001"
+            },
+            comprador: {
+                rnccomprador: v.cliente_identificacion,
+                razonsocialcomprador: v.nombres + " " + v.apellidos,
+
+                correocomprador: (v.correoelectronico && v.correoelectronico.includes('@')) ? v.correoelectronico.trim().toUpperCase() : "VICENTRIVASZORRILLA@GMAIL.COM",
+                direccioncomprador: (v.direccion || "SANTO DOMINGO, RD").replace(/[\.,]/g, ''),
+                municipiocomprador: "010100",
+                provinciacomprador: "010000",
+                fechaordencompra: "", // Campos adicionales del nuevo formato
+                numeroordencompra: "",
+                codigointernocomprador: "",
+                contactocomprador: `${v.nombres || ''} ${v.apellidos || ''}`.trim(),
+                fechaentrega: ""
+            },
+            totales: {
+                montogravadototal: (parseFloat(v.cuota_bruto) || 0).toFixed(2),
+                montogravadoi1: (parseFloat(v.cuota_bruto) || 0).toFixed(2),
+                totalitbis1: (parseFloat(v.cuota_itbis) || 0).toFixed(2),
+                montototal: (parseFloat(v.cuota_total) || 0).toFixed(2),
+                itbis1: v.cuota_itbis > 0 ? "18" : "0",
+                totalitbis: (parseFloat(v.cuota_itbis) || 0).toFixed(2)
+            },
+            items: {
+                "1": {
+                    NombreItem: `SERVICIO / PRODUCTO (${v.referenciafactura || ncfOriginal})`,
+                    NumeroLinea: "1",
+                    IndicadorFacturacion: "1",
+                    CantidadItem: "1.00",
+                    UnidadMedida: "31", // Ejemplo del usuario usa "31"
+                    PrecioUnitarioItem: (parseFloat(v.cuota_bruto) || 0).toFixed(2),
+                    MontoItem: (parseFloat(v.cuota_bruto) || 0).toFixed(2),
+                    IndicadorBienOServicio: "1"
+                }
+            }
+        };
+
+        // Regla: Si la factura es menor a 250,000, quitar rnccomprador, contactocomprador, correocomprador, direccioncomprador, municipiocomprador, provinciacomprador
+        if (parseFloat(eCF.totales.montototal) < 250000) {
+            delete eCF.comprador.rnccomprador;
+            delete eCF.comprador.contactocomprador;
+            delete eCF.comprador.correocomprador;
+            delete eCF.comprador.direccioncomprador;
+            delete eCF.comprador.municipiocomprador;
+            delete eCF.comprador.provinciacomprador;
+        }
+        // if (ncfOriginal.substring(1, 3) == "E31") {
+        //     delete eCF.iddoc.indicadormontogravado;
+        // }
+
+        if (eCF.iddoc.indicadormontogravado !== undefined) {
+            delete eCF.iddoc.indicadormontogravado;
+        }
 
         // 3. Enviar a Bitnova
         console.log(` Enviando a Bitnova para ID ${idFacturaCuota}...`);
@@ -317,12 +442,12 @@ app.post('/real/enviar-factura-id', async (req, res) => {
                     idfactura, idfacturacuotas, AlmacenamientoSesionEnCache, CodigoSeguridad, Customer, 
                     FechaHoraFirma, TIPO_ECF, TotalITBIS, Total_amount, codigo, encf, estado, 
                     fechaRecepcion, mensajes, secuenciaUtilizada, trackId, url, xml, json
-                ) VALUES (?, ?, ?, ?, ?, STR_TO_DATE(?, '%d-%m-%Y %H:%i:%s'), ?, ?, ?, ?, ?, ?, STR_TO_DATE(?, '%m/%d/%Y %r'), ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, DATE_FORMAT(STR_TO_DATE(?,'%d-%m-%Y %H:%i:%s'),'%Y-%m-%d %H:%i:%s'), ?, ?, ?, ?, ?, ?, STR_TO_DATE(?, '%Y-%m-%d %H:%i:%s'), ?, ?, ?, ?, ?, ?)
             `, [
                 v.idfactura, v.idfacturacuotas,
                 r.AlmacenamientoSesionEnCache ? 1 : 0, r.CodigoSeguridad || null, r.Customer || null,
                 r.FechaHoraFirma || null, r.TIPO_ECF || null, r.TotalITBIS || null, r.Total_amount || null, r.codigo || null,
-                r.encf || null, r.estado || null, r.fechaRecepcion || null, msgs || null,
+                r.encf || null, r.estado || null, r.fechaRecepcion || null, msgs || "",
                 r.secuenciaUtilizada ? 1 : 0, r.trackId || null, r.url || null, r.xml || null,
                 JSON.stringify(resultData)
             ]);
@@ -339,21 +464,18 @@ app.post('/real/enviar-factura-id', async (req, res) => {
         res.status(error.response?.status || 500).json(error.response?.data || { error: "Error en proceso automático" });
     }
 });
-
 /**
  * @route POST /real/enviar-factura
  * @desc Envía el JSON de la factura a Bitnova usando el Bearer Token
  */
 app.post('/real/enviar-factura', async (req, res) => {
+
     try {
         const { token: rawToken, data } = req.body;
         let token = (rawToken || "").trim();
-
-
         if (!token || !data) {
-            return res.status(400).json({ error: "Faltan el Token o los datos de la factura." });
+            return res.status(400).json({ error: "Faltan el token o los datos de la factura." });
         }
-
 
         const bitnovaUrl = "https://api.bitnovaservices.com/api/v1/dgii";
         let resultData;
@@ -363,10 +485,6 @@ app.post('/real/enviar-factura', async (req, res) => {
             'Authorization': `${token}`,
             'Content-Type': 'application/json'
         };
-
-        console.log("[HTTP REQUEST] POST", bitnovaUrl);
-        console.log("[HTTP REQUEST] Headers:", JSON.stringify(headers, null, 2));
-
 
 
         try {
@@ -385,11 +503,9 @@ app.post('/real/enviar-factura', async (req, res) => {
                 estado: axiosError.response?.data?.estado || "Rechazado"
             };
         }
-
         // --- Inserción en tabla facturacuotaalmenacimientodgii ---
         try {
-            // Asume que el request incluye IdFactura e IdFacturacuota en alguna parte (e.g., req.body.idfactura)
-            // Si el backend Java no lo envía, se quedarán como null/0 según esquema de BD.
+
             const r = resultData.facturaAceptada || resultData.data || resultData;
             const msgs = typeof r.mensajes === 'object' ? JSON.stringify(r.mensajes) : r.mensajes;
             let parsedFechaRecepcion = r.fechaRecepcion;
@@ -416,7 +532,7 @@ app.post('/real/enviar-factura', async (req, res) => {
                     idfactura, idfacturacuotas, AlmacenamientoSesionEnCache, CodigoSeguridad, Customer, 
                     FechaHoraFirma, TIPO_ECF, TotalITBIS, Total_amount, codigo, encf, estado, 
                     fechaRecepcion, mensajes, secuenciaUtilizada, trackId, url, xml, json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ATE_FORMAT(STR_TO_DATE(?,'%d-%m-%Y %H:%i:%s'),'%Y-%m-%d %H:%i:%s'), ?, ?, ?, ?, ?, ?, STR_TO_DATE(?, '%Y-%m-%d %H:%i:%s'), ?, ?, ?, ?, ?, ?)
             `, [
                 req.body.idfactura || (data?.datos_adicionales?.numerofacturainterna) || 0,
                 req.body.idfacturacuotas || 0,
@@ -426,7 +542,10 @@ app.post('/real/enviar-factura', async (req, res) => {
                 r.secuenciaUtilizada ? 1 : 0, r.trackId || null, r.url || null, r.xml || null,
                 JSON.stringify(resultData)
             ]);
-            console.log(" Respuesta DGII guardada exitosamente en facturacuotaalmenacimientodgii (desde Java directo).");
+            //  LOG DETALLADO
+            console.log(" VALORES A INSERTAR:");
+            console.log(JSON.stringify(insertValues, null, 2));
+            console.log(" Respuesta DGII guardada exitosamente en facturacuotaalmenacimientodgii.");
         } catch (dbErr) {
             console.error(" Fallo al guardar respuesta DGII en facturacuotaalmenacimientodgii:", dbErr.message);
         }

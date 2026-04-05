@@ -17,7 +17,7 @@
                 <div class="card">
                     <h2>1. Seleccionar Empresa</h2>
                     <div class="form-group">
-                        <label>Empresa:</label>
+                        <label>Empresa seleccionada:</label>
                         <select id="empresa_selector" onchange="seleccionarEmpresa()"></select>
                     </div>
 
@@ -61,7 +61,7 @@
             <!-- COLUMNA 2: OPERACIÓN -->
             <div>
                 <div id="colPaso2" class="card disabled">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style=" justify-content: space-between; align-items: center;">
                         <h2> 2. Enviar e-CF</h2>
                         <span id="labelEmpresaActiva" class="badge-empresa">Sin Empresa</span>
                     </div>
@@ -84,8 +84,7 @@
                                 onchange="cargarVentas()"></select>
                         </div>
 
-                        <div class="grid"
-                            style="grid-template-columns: 1fr 1fr auto; gap: 0.5rem; margin-bottom: 1rem;">
+                        <div class="grid" style="gap: 0.5rem; margin-bottom: 1rem;">
                             <div class="form-group">
                                 <label style="font-size: 0.65rem;">Desde</label>
                                 <input type="date" id="fecha_desde" style="padding: 0.2rem; font-size: 0.75rem;">
@@ -100,10 +99,12 @@
                             </div>
                         </div>
 
-                        <div style="max-height: 250px; overflow-y: auto;">
+                        <div style="max-height: 250px;overflow-y: auto; max-width: 750px">
                             <table style="width: 100%; border-collapse: collapse; font-size: 0.7rem;">
                                 <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10;">
                                     <tr>
+                                        <th style="text-align: left; padding: 0.3rem;">IDFC</th>
+                                        <th style="text-align: left; padding: 0.3rem;">IDFacturacuota</th>
                                         <th style="text-align: left; padding: 0.3rem;">NCF</th>
                                         <th style="text-align: left; padding: 0.3rem;">Cliente</th>
                                         <th style="text-align: right; padding: 0.3rem;">Total</th>
@@ -120,7 +121,7 @@
                         </div>
                     </div>
 
-                    <div class="form-group" style="display: none;">
+                    <div class="form-group">
                         <label>Estructura JSON (e-CF)</label>
                         <textarea id="invoice_data" rows="10"
                             style="font-family: monospace; font-size: 0.7rem;"></textarea>
@@ -139,17 +140,22 @@
 
     <script>
         let empresas = [];
+        const fechaDGII = () => {
+            const d = new Date();
+            return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+        };
         const templates = {
             E31: {
                 iddoc: { tipoecf: "31", encf: "E310000000001", fechavencimientosecuencia: "31-12-2028", tipoingresos: "01", tipopago: "1", indicadormontogravado: "0" },
-                datos_adicionales: { fechaemision: new Date().toLocaleDateString('es-DO').replace(/\//g, '-'), numerofacturainterna: "", numeropedidointerno: "", zonaventa: "GENERAL", codigovendedor: "001" },
+                datos_adicionales: { fechaemision: fechaDGII, numerofacturainterna: "", numeropedidointerno: "", zonaventa: "GENERAL", codigovendedor: "001" },
                 comprador: { rnccomprador: "131793916", razonsocialcomprador: "CLIENTE SRL", correocomprador: "cliente@correo.com", direccioncomprador: "SANTO DOMINGO, RD", municipiocomprador: "010100", provinciacomprador: "010000", fechaordencompra: "", numeroordencompra: "", codigointernocomprador: "", contactocomprador: "CONTACTO", fechaentrega: "" },
                 totales: { montogravadototal: "1000.00", montogravadoi1: "1000.00", totalitbis1: "180.00", montototal: "1180.00", itbis1: "18", totalitbis: "180.00" },
                 items: { "1": { NombreItem: "PRODUCTO EJEMPLO", NumeroLinea: "1", IndicadorFacturacion: "1", CantidadItem: "1.00", UnidadMedida: "31", PrecioUnitarioItem: "1000.00", MontoItem: "1000.00", IndicadorBienOServicio: "1" } }
             },
+
             E32: {
                 iddoc: { tipoecf: "32", encf: "E320000000001", fechavencimientosecuencia: "31-12-2028", tipoingresos: "01", tipopago: "1", indicadormontogravado: "0" },
-                datos_adicionales: { fechaemision: new Date().toLocaleDateString('es-DO').replace(/\//g, '-'), numerofacturainterna: "", numeropedidointerno: "", zonaventa: "GENERAL", codigovendedor: "001" },
+                datos_adicionales: { fechaemision: fechaDGII, numerofacturainterna: "", numeropedidointerno: "", zonaventa: "GENERAL", codigovendedor: "001" },
                 comprador: { rnccomprador: "", razonsocialcomprador: "CONSUMIDOR FINAL", correocomprador: "cliente@correo.com", direccioncomprador: "SANTO DOMINGO, RD", municipiocomprador: "010100", provinciacomprador: "010000", fechaordencompra: "", numeroordencompra: "", codigointernocomprador: "", contactocomprador: "CONTACTO", fechaentrega: "" },
                 totales: { montogravadototal: "500.00", montogravadoi1: "500.00", totalitbis1: "90.00", montototal: "590.00", itbis1: "18", totalitbis: "90.00" },
                 items: { "1": { NombreItem: "CONSUMO EJEMPLO", NumeroLinea: "1", IndicadorFacturacion: "1", CantidadItem: "1.00", UnidadMedida: "31", PrecioUnitarioItem: "500.00", MontoItem: "500.00", IndicadorBienOServicio: "1" } }
@@ -336,6 +342,7 @@
             try {
                 const data = JSON.parse(invoiceData);
 
+                log('logSend', "DATA:", data);
                 log('logSend', "Preparando envío real a DGII...");
                 const headers = {
                     "Authorization": `${token}`,
@@ -356,7 +363,7 @@
                     log('logSend', "Factura Rechazada:", result);
                 }
                 if (result.headers_enviados) {
-                    log('logSend', `[DEBUG] Headers utilizados:`, result.headers_enviados);
+                    log('logSend', `[ Headers utilizados:`, result.headers_enviados);
                 }
             } catch (err) {
                 log('logSend', "Error: " + err.message);
@@ -397,11 +404,13 @@
                     const tr = document.createElement('tr');
                     tr.style.borderBottom = "1px solid #f1f5f9";
                     tr.innerHTML = `
+                           <td style="padding: 0.5rem; font-weight: 600;">${venta.idfactura}</td>
+                         <td style="padding: 0.5rem; font-weight: 600;">${venta.idfacturacuotas}</td>
                         <td style="padding: 0.5rem; font-weight: 600;">${venta.ncf || 'S/N'}</td>
                         <td style="padding: 0.5rem;">${venta.cliente}</td>
                         <td style="padding: 0.5rem; text-align: right;">${parseFloat(venta.total).toLocaleString()}</td>
-                        <td style="padding: 0.5rem; text-align: center; display: flex; gap: 0.3rem; justify-content: center;">
-                            <button onclick='enviarPorID(${venta.idfacturacuotas})' style="padding: 0.2rem 0.5rem; font-size: 0.65rem; background: #22c55e; width: auto;">Cargar venta</button>
+                        <td style="padding: 0.5rem; text-align: center;justify-content: center;">
+                            <button onclick='enviarPorID(${venta.idfacturacuotas})' style="padding: 0.2rem 0.5rem; font-size: 0.65rem; background: #22c55e; ">Cargar venta</button>
                         </td>
                     `;
                     body.appendChild(tr);
@@ -430,7 +439,7 @@
                 log('logSend', "headers =", headers);
                 log('logSend', "[El backend generará los 'datos_factura' automáticamente.");
 
-                const response = await fetch('/real/enviar-factura-id', {
+                const response = await fetch('/real/real/cargar-venta-by-idfacturacuota', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ idFacturaCuota, token })
