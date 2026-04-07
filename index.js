@@ -336,74 +336,75 @@ app.post('/real/enviar-factura-id', async (req, res) => {
             iddoc: {
                 tipoecf: tipoEcf,
                 encf: v.ncf,
+                fechavencimientosecuencia: "31-12-2028",
+                indicadormontogravado: "0",
                 tipoingresos: "01",
                 tipopago: (v.formapago || 1).toString()
             },
-            datos_adicionales: {
-                fechaemision: fechaEmision,
-                numerofacturainterna: (v.idfacturacuotas || "").toString(),
-                numeropedidointerno: (v.referenciafactura || "").toString(),
-                zonaventa: "GENERAL",
-                codigovendedor: "001"
-            },
+
             comprador: {
                 rnccomprador: v.cliente_identificacion,
                 razonsocialcomprador: v.nombres + " " + v.apellidos,
-
-                correocomprador: (v.correoelectronico && v.correoelectronico.includes('@')) ? v.correoelectronico.trim().toUpperCase() : "VICENTRIVASZORRILLA@GMAIL.COM",
-                direccioncomprador: (v.direccion || "SANTO DOMINGO, RD").replace(/[\.,]/g, ''),
-                municipiocomprador: "010100",
-                provinciacomprador: "010000",
-                fechaordencompra: "", // Campos adicionales del nuevo formato
-                numeroordencompra: "",
-                codigointernocomprador: "",
-                contactocomprador: `${v.nombres || ''} ${v.apellidos || ''}`.trim(),
-                fechaentrega: ""
             },
             totales: {
+                montototal: (parseFloat(v.cuota_total) || 0).toFixed(2),
+
                 montogravadototal: (parseFloat(v.cuota_bruto) || 0).toFixed(2),
                 montogravadoi1: (parseFloat(v.cuota_bruto) || 0).toFixed(2),
-                totalitbis1: (parseFloat(v.cuota_itbis) || 0).toFixed(2),
-                montototal: (parseFloat(v.cuota_total) || 0).toFixed(2),
                 itbis1: v.cuota_itbis > 0 ? "18" : "0",
+
+                totalitbis1: (parseFloat(v.cuota_itbis) || 0).toFixed(2),
                 totalitbis: (parseFloat(v.cuota_itbis) || 0).toFixed(2)
             },
+            datos_adicionales: {
+                fechaemision: "06-04-2026",
+                enviaraprobacion: false
+
+            },
+
             items: {
                 "1": {
                     NombreItem: `SERVICIO / PRODUCTO (${v.referenciafactura || ncfOriginal})`,
                     NumeroLinea: "1",
                     IndicadorFacturacion: "1",
-                    CantidadItem: "1.00",
-                    UnidadMedida: "31", // Ejemplo del usuario usa "31"
-                    PrecioUnitarioItem: (parseFloat(v.cuota_bruto) || 0).toFixed(2),
+                    CantidadItem: "1",
+                    PrecioUnitarioItem: (parseFloat(v.cuota_total) || 0).toFixed(2),
                     MontoItem: (parseFloat(v.cuota_bruto) || 0).toFixed(2),
                     IndicadorBienOServicio: "1"
                 }
             }
         };
-
+        console.log("tipo de documento: ", ncfOriginal.substring(1, 3))
         // Regla: Si la factura es menor a 250,000, quitar rnccomprador, contactocomprador, correocomprador, direccioncomprador, municipiocomprador, provinciacomprador
-        if (parseFloat(eCF.totales.montototal) < 250000) {
-            delete eCF.comprador.rnccomprador;
-            delete eCF.comprador.contactocomprador;
-            delete eCF.comprador.correocomprador;
-            delete eCF.comprador.direccioncomprador;
-            delete eCF.comprador.municipiocomprador;
-            delete eCF.comprador.provinciacomprador;
+        if (ncfOriginal.substring(1, 3) == "32") {
+            delete eCF.iddoc.fechavencimientosecuencia;
+
+            if (parseFloat(eCF.totales.montototal) < 250000) {
+                delete eCF.comprador.rnccomprador;
+                delete eCF.comprador.contactocomprador;
+                delete eCF.comprador.correocomprador;
+                delete eCF.comprador.direccioncomprador;
+                delete eCF.comprador.municipiocomprador;
+                delete eCF.comprador.provinciacomprador;
+            }
+            if (eCF.iddoc.indicadormontogravado !== undefined) {
+                delete eCF.iddoc.indicadormontogravado;
+            }
         }
-        // if (ncfOriginal.substring(1, 3) == "E31") {
+        // if (ncfOriginal.substring(1, 3) == "31") {
         //     delete eCF.iddoc.indicadormontogravado;
+        //     delete eCF.iddoc.tipoingresos;
+        //     delete eCF.iddoc.tipopago
         // }
 
-        if (eCF.iddoc.indicadormontogravado !== undefined) {
-            delete eCF.iddoc.indicadormontogravado;
-        }
+
 
         // 3. Enviar a Bitnova
         console.log(` Enviando a Bitnova para ID ${idFacturaCuota}...`);
 
         const bitnovaUrl = "https://api.bitnovaservices.com/api/v1/dgii";
         let resultData;
+        let NCFF;
         let httpStatus = 200;
 
         const headers = {
@@ -442,7 +443,7 @@ app.post('/real/enviar-factura-id', async (req, res) => {
                     idfactura, idfacturacuotas, AlmacenamientoSesionEnCache, CodigoSeguridad, Customer, 
                     FechaHoraFirma, TIPO_ECF, TotalITBIS, Total_amount, codigo, encf, estado, 
                     fechaRecepcion, mensajes, secuenciaUtilizada, trackId, url, xml, json
-                ) VALUES (?, ?, ?, ?, ?, DATE_FORMAT(STR_TO_DATE(?,'%d-%m-%Y %H:%i:%s'),'%Y-%m-%d %H:%i:%s'), ?, ?, ?, ?, ?, ?, STR_TO_DATE(?, '%Y-%m-%d %H:%i:%s'), ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?, ?, ?, ?, ?, ?)
             `, [
                 v.idfactura, v.idfacturacuotas,
                 r.AlmacenamientoSesionEnCache ? 1 : 0, r.CodigoSeguridad || null, r.Customer || null,
