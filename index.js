@@ -8,28 +8,9 @@ const mysql = require('mysql2/promise');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Configuración de MySQL (Pool de conexiones)
-const dbConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'facturacion_db'
-};
-
-let pool;
-
-async function initDB() {
-    try {
-        pool = mysql.createPool(dbConfig);
-        console.log("Intentando conectar a MySQL...");
-        console.log(" Conexión a MySQL establecida.");
-    } catch (err) {
-        console.error(" Error de conexión a MySQL:", err.message);
-    }
-}
-
-initDB();
+// Configuración de MySQL (Pool de conexiones) movida a config/db.js
+const pool = require('./config/db.js');
+const notasController = require('./controllers/notasController.js');
 
 // Configuración de Multer para manejar la subida del archivo .p12
 const upload = multer({ dest: 'uploads/' });
@@ -357,7 +338,7 @@ app.post('/real/enviar-factura-id', async (req, res) => {
                 totalitbis: (parseFloat(v.cuota_itbis) || 0).toFixed(2)
             },
             datos_adicionales: {
-                fechaemision: "06-04-2026",
+                fechaemision: fechaEmision,
                 enviaraprobacion: false
 
             },
@@ -374,7 +355,6 @@ app.post('/real/enviar-factura-id', async (req, res) => {
                 }
             }
         };
-        console.log("tipo de documento: ", ncfOriginal.substring(1, 3))
         // Regla: Si la factura es menor a 250,000, quitar rnccomprador, contactocomprador, correocomprador, direccioncomprador, municipiocomprador, provinciacomprador
         if (ncfOriginal.substring(1, 3) == "32") {
             delete eCF.iddoc.fechavencimientosecuencia;
@@ -439,22 +419,22 @@ app.post('/real/enviar-factura-id', async (req, res) => {
             const r = resultData.facturaAceptada || resultData.data || resultData; // Soporte por si Bitnova lo anida
             const msgs = typeof r.mensajes === 'object' ? JSON.stringify(r.mensajes) : r.mensajes;
             await pool.query(`
-                INSERT INTO facturacuotaalmenacimientodgii (
-                    idfactura, idfacturacuotas, AlmacenamientoSesionEnCache, CodigoSeguridad, Customer, 
+                INSERT INTO movimientofacturacfalmacenamientodgii (
+                    idfactura, idfacturacuotas,idnotadebitocredito, AlmacenamientoSesionEnCache, CodigoSeguridad, Customer, 
                     FechaHoraFirma, TIPO_ECF, TotalITBIS, Total_amount, codigo, encf, estado, 
                     fechaRecepcion, mensajes, secuenciaUtilizada, trackId, url, xml, json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?, ?, ?, ?, ?, ?)
             `, [
-                v.idfactura, v.idfacturacuotas,
+                v.idfactura, v.idfacturacuotas, null,
                 r.AlmacenamientoSesionEnCache ? 1 : 0, r.CodigoSeguridad || null, r.Customer || null,
                 r.FechaHoraFirma || null, r.TIPO_ECF || null, r.TotalITBIS || null, r.Total_amount || null, r.codigo || null,
                 r.encf || null, r.estado || null, r.fechaRecepcion || null, msgs || "",
                 r.secuenciaUtilizada ? 1 : 0, r.trackId || null, r.url || null, r.xml || null,
                 JSON.stringify(resultData)
             ]);
-            console.log(" Respuesta DGII guardada exitosamente en facturacuotaalmenacimientodgii.");
+            console.log(" Respuesta DGII guardada exitosamente en movimientofacturacfalmenacimientodgii.");
         } catch (dbErr) {
-            console.error(" Fallo al guardar respuesta DGII en facturacuotaalmenacimientodgii:", dbErr.message);
+            console.error(" Fallo al guardar respuesta DGII en movimientofacturacfalmenacimientodgii:", dbErr.message);
         }
         // ---------------------------------------------------------
 
@@ -465,6 +445,380 @@ app.post('/real/enviar-factura-id', async (req, res) => {
         res.status(error.response?.status || 500).json(error.response?.data || { error: "Error en proceso automático" });
     }
 });
+
+
+// app.post('/real/enviar-nota-id', async (req, res) => {
+//     const { idNotaDebitoCredito, token: providedToken } = req.body;
+//     if (!pool) return res.status(503).json({ error: "DB no disponible" });
+//     if (!idNotaDebitoCredito) return res.status(400).json({ error: "Falta idNotaDebitoCredito" });
+//     try {
+//         const [rows] = await pool.query(`CALL loadDatosNotasDebCredDgii(?)`, [idNotaDebitoCredito]);
+
+//         if (rows.length === 0) {
+//             return res.status(404).json({ error: "Nota no encontrada" });
+//         }
+
+//         const v = rows[0][0];
+
+//         const token = (providedToken || v.emisor_token || "").trim();
+
+//         const tipoEcf = v.cf.substring(1, 3); // 33 o 34
+
+//         const eCF = {
+//             //     iddoc: {
+//             //         tipoecf: tipoEcf,
+//             //         encf: v.cf,
+//             //         tipoingresos: "01",
+//             //         tipopago: "1"
+//             //     },
+//             //     comprador: {
+//             //         rnccomprador: "40230670115",
+//             //         razonsocialcomprador: v.nombres + " " + v.apellidos
+//             //     },
+//             //     totales: {
+//             //         montototal: (parseFloat(v.valortotal) || 0).toFixed(2),
+//             //         montoexento: (parseFloat(v.valortotal) || 0).toFixed(2)
+//             //     },
+//             //     datos_adicionales: {
+//             //         fechaemision: v.fecha,
+//             //         enviaraprobacion: false
+//             //     },
+//             //     items: {
+//             //         "1": {
+//             //             NombreItem: v.concepto || "NOTA",
+//             //             NumeroLinea: "1",
+//             //             IndicadorFacturacion: "4",
+//             //             CantidadItem: "1",
+//             //             PrecioUnitarioItem: (parseFloat(v.valortotal) || 0).toFixed(2),
+//             //             MontoItem: (parseFloat(v.valortotal) || 0).toFixed(2),
+//             //             IndicadorBienOServicio: "1"
+//             //         }
+//             //     },
+//             //     informacion_referencia: {
+//             //         "1": {
+//             //             NCFModificado: v.cfmodificado,
+//             //             FechaNCFModificado: v.fechacfmodificado,
+//             //             CodigoModificacion: "3"
+//             //         }
+//             //     }
+//             // };
+//             // if (tipoEcf === "34") {
+//             //     // Nota de crédito
+//             //     eCF.iddoc.IndicadorNotaCredito = "4";
+//             //     eCF.opciones_adicionales = { INCLUIR_EMISOR: true };
+
+//             //     eCF.informacion_referencia["1"].RazonModificacion = "Error en monto";
+
+//             // } else if (tipoEcf === "33") {
+//             //     // Nota de débito
+//             //     eCF.iddoc.fechavencimientosecuencia = "31-12-2028";
+//             // }
+
+//             "iddoc": {
+//                 "tipoecf": "34",
+//                 "encf": "E340000009003",
+//                 "IndicadorNotaCredito": "0",
+//                 "indicadormontogravado": "0",
+//                 "tipoingresos": "01",
+//                 "tipopago": "1"
+//             },
+//             "comprador": {
+//                 "rnccomprador": "131880681",
+//                 "razonsocialcomprador": "DOCUMENTOS ELECTRONICOS DE 03",
+//                 "contactocomprador": "MARCOS LATIPLOL",
+//                 "direccioncomprador": "CALLE JACINTO DE LA CONCHA FELIZ ESQUINA 27 DE FEBRERO,FRENTE A DOMINO",
+//                 "municipiocomprador": "010100",
+//                 "provinciacomprador": "010000",
+//                 "fechaentrega": "10-10-2020",
+//                 "fechaordencompra": "10-11-2018",
+//                 "numeroordencompra": "4500352238",
+//                 "codigointernocomprador": "10633440",
+//                 "correocomprador": "MARCOSLATIPLOL@KKKK.COM"
+//             },
+//             "totales": {
+//                 "montogravadototal": "480250.00",
+//                 "montogravadoi1": "480250.00",
+//                 "itbis1": "18",
+//                 "totalitbis": "86445.00",
+//                 "totalitbis1": "86445.00",
+//                 "montototal": "566695.00"
+//             },
+//             "datos_adicionales": {
+//                 "fechaemision": "02-04-2020",
+//                 "municipioemisor": "010100",
+//                 "provinciaemisor": "010000",
+//                 "INCLUIR_EMISOR": false,
+//                 "direccionemisor": "AVE. ISABEL AGUIAR NO. 269, ZONA INDUSTRIAL DE HERRERA",
+//                 "numerofacturainterna": "123456789016",
+//                 "numeropedidointerno": "123456789016",
+//                 "zonaventa": "NORTE",
+//                 "codigovendedor": "AA0000000100000000010000000002000000000300000000050000000006"
+//             },
+//             "opciones_adicionales": {
+//                 "INCLUIR_EMISOR": true
+//             },
+//             "items": {
+//                 "1": {
+//                     "NombreItem": "BLOCK",
+//                     "NumeroLinea": "1",
+//                     "IndicadorFacturacion": "1",
+//                     "CantidadItem": "100.00",
+//                     "UnidadMedida": "23",
+//                     "PrecioUnitarioItem": "450.0000",
+//                     "DescuentoMonto": "200.00",
+//                     "MontoItem": "45150.00",
+//                     "IndicadorBienOServicio": "1",
+//                     "TablaSubDescuento": [
+//                         {
+//                             "TipoSubDescuento": "$",
+//                             "MontoSubDescuento": "200.00"
+//                         }
+//                     ],
+//                     "RecargoMonto": "350.00",
+//                     "SubRecargo": [
+//                         {
+//                             "TipoSubRecargo": "$",
+//                             "MontoSubRecargo": "350.00"
+//                         }
+//                     ]
+//                 }
+//             },
+//             "informacion_referencia": {
+//                 "1": {
+//                     "TipoDocumentoReferencia": "01",
+//                     "NCFModificado": "E310000007003",
+//                     "FechaNCFModificado": "15-04-2026",
+//                     "CodigoModificacion": "3",
+//                     "RazonModificacion": "Error en monto"
+//                 }
+//             }
+//         }
+
+//         const bitnovaUrl = "https://api.bitnovaservices.com/api/v1/dgii";
+
+//         let resultData;
+//         let httpStatus = 200;
+//         console.log("JSON ENVIADO:", JSON.stringify(eCF, null, 2));
+//         try {
+//             const response = await axios.post(bitnovaUrl, eCF, {
+//                 headers: {
+//                     Authorization: token,
+//                     "Content-Type": "application/json"
+//                 },
+//                 timeout: 60000
+//             });
+
+//             resultData = { ...response.data, json_enviado: eCF };
+
+//         } catch (axiosError) {
+//             httpStatus = axiosError.response?.status || 500;
+
+//             resultData = {
+//                 ...(axiosError.response?.data || {}),
+//                 error_local: axiosError.message,
+//                 json_enviado: eCF
+//             };
+//         }
+
+//         try {
+//             const r = resultData.facturaAceptada || resultData.data || resultData; // Soporte por si Bitnova lo anida
+//             const msgs = typeof r.mensajes === 'object' ? JSON.stringify(r.mensajes) : r.mensajes;
+//             await pool.query(`
+//                 INSERT INTO movimientofacturacfalmacenamientodgii (
+//                     idfactura, idfacturacuotas,idnotadebitocredito, AlmacenamientoSesionEnCache, CodigoSeguridad, Customer, 
+//                     FechaHoraFirma, TIPO_ECF, TotalITBIS, Total_amount, codigo, encf, estado, 
+//                     fechaRecepcion, mensajes, secuenciaUtilizada, trackId, url, xml, json
+//                 ) VALUES (?, ?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?, ?, ?, ?, ?, ?)
+//             `, [
+//                 v.idfactura, v.idfacturacuotas, idNotaDebitoCredito,
+//                 r.AlmacenamientoSesionEnCache ? 1 : 0, r.CodigoSeguridad || null, r.Customer || null,
+//                 r.FechaHoraFirma || null, r.TIPO_ECF || null, r.TotalITBIS || null, r.Total_amount || null, r.codigo || null,
+//                 r.cf || null, r.estado || null, r.fechaRecepcion || null, msgs || "",
+//                 r.secuenciaUtilizada ? 1 : 0, r.trackId || null, r.url || null, r.xml || null,
+//                 JSON.stringify(resultData)
+//             ]);
+//             console.log(" Respuesta DGII guardada exitosamente en movimientofacturacfalmenacimientodgii.");
+//         } catch (dbErr) {
+//             console.error(" Fallo al guardar respuesta DGII en movimientofacturacfalmenacimientodgii:", dbErr.message);
+//         }
+
+//         res.status(httpStatus).json(resultData);
+
+//     } catch (error) {
+//         console.error("Error:", error.message);
+//         res.status(500).json({ error: "Error en proceso" });
+//     }
+// });
+
+
+app.post('/real/enviar-nota-id', async (req, res) => {
+    const { idNotaDebitoCredito, token: providedToken } = req.body;
+
+    if (!pool) return res.status(503).json({ error: "DB no disponible" });
+    if (!idNotaDebitoCredito) return res.status(400).json({ error: "Falta idNotaDebitoCredito" });
+
+    try {
+        const [rows] = await pool.query(`CALL loadDatosNotasDebCredDgii(?)`, [idNotaDebitoCredito]);
+
+        if (!rows || !rows[0] || rows[0].length === 0) {
+            return res.status(404).json({ error: "Nota no encontrada" });
+        }
+
+        const v = rows[0][0];
+        const token = (providedToken || v.emisor_token || "").trim();
+        const tipoEcf = v.cf.substring(1, 3); // 33 o 34
+
+        // 🔥 Construcción dinámica
+        const eCF = {
+            iddoc: {
+                tipoecf: tipoEcf,
+                encf: v.cf,
+                tipoingresos: "01",
+                tipopago: "1"
+            },
+            comprador: {
+                rnccomprador: v.rnc || "40230670115",
+                razonsocialcomprador: `${v.nombres || ""} ${v.apellidos || ""}`.trim()
+            },
+            totales: {
+                montototal: (parseFloat(v.valortotal) || 0).toFixed(2),
+                montoexento: (parseFloat(v.valortotal) || 0).toFixed(2)
+            },
+            datos_adicionales: {
+                fechaemision: v.fecha,
+                enviaraprobacion: false
+            },
+            items: {
+                "1": {
+                    NombreItem: v.concepto || "NOTA",
+                    NumeroLinea: "1",
+                    IndicadorFacturacion: "4",
+                    CantidadItem: "1",
+                    PrecioUnitarioItem: (parseFloat(v.valortotal) || 0).toFixed(2),
+                    MontoItem: (parseFloat(v.valortotal) || 0).toFixed(2),
+                    IndicadorBienOServicio: "1"
+                }
+            },
+            informacion_referencia: {
+                "1": {
+                    NCFModificado: v.cfmodificado,
+                    FechaNCFModificado: v.fechacfmodificado,
+                    CodigoModificacion: "3"
+                }
+            }
+        };
+
+        // 🔥 Lógica por tipo
+        if (tipoEcf === "34") {
+            // Nota de Crédito
+            eCF.iddoc.IndicadorNotaCredito = "2"; // Ajuste de monto
+            eCF.informacion_referencia["1"].RazonModificacion = "Error en monto";
+
+            eCF.opciones_adicionales = {
+                INCLUIR_EMISOR: true
+            };
+
+        } else if (tipoEcf === "33") {
+            // Nota de Débito
+            // eCF.iddoc.fechavencimientosecuencia = "31-12-2028";
+        }
+
+        // 🧹 Limpiar nulls
+        const limpiar = (obj) => {
+            Object.keys(obj).forEach(key => {
+                if (obj[key] === null || obj[key] === undefined || obj[key] === "") {
+                    delete obj[key];
+                } else if (typeof obj[key] === "object" && !Array.isArray(obj[key])) {
+                    limpiar(obj[key]);
+                }
+            });
+        };
+        limpiar(eCF);
+
+        console.log("======= DEBUG ECF =======");
+        console.log("ID:", idNotaDebitoCredito);
+        console.log("Tipo:", tipoEcf);
+        console.log("eNCF:", eCF.iddoc.encf);
+        console.log("Indicador:", eCF.iddoc.IndicadorNotaCredito);
+        console.log(JSON.stringify(eCF, null, 2));
+        console.log("=========================");
+
+        const bitnovaUrl = "https://api.bitnovaservices.com/api/v1/dgii";
+
+        let resultData;
+        let httpStatus = 200;
+
+        try {
+            const response = await axios.post(bitnovaUrl, eCF, {
+                headers: {
+                    Authorization: token,
+                    "Content-Type": "application/json"
+                },
+                timeout: 60000
+            });
+
+            resultData = { ...response.data, json_enviado: eCF };
+
+        } catch (axiosError) {
+            httpStatus = axiosError.response?.status || 500;
+
+            resultData = {
+                ...(axiosError.response?.data || {}),
+                error_local: axiosError.message,
+                json_enviado: eCF
+            };
+        }
+
+        // 💾 Guardar respuesta
+        try {
+            const r = resultData.facturaAceptada || resultData.data || resultData;
+            const msgs = typeof r.mensajes === 'object' ? JSON.stringify(r.mensajes) : r.mensajes;
+
+            await pool.query(`
+                INSERT INTO movimientofacturacfalmacenamientodgii (
+                    idfactura, idfacturacuotas, idnotadebitocredito,
+                    AlmacenamientoSesionEnCache, CodigoSeguridad, Customer,
+                    FechaHoraFirma, TIPO_ECF, TotalITBIS, Total_amount,
+                    codigo, encf, estado, fechaRecepcion, mensajes,
+                    secuenciaUtilizada, trackId, url, xml, json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+                v.idfactura,
+                v.idfacturacuotas,
+                idNotaDebitoCredito,
+                r.AlmacenamientoSesionEnCache ? 1 : 0,
+                r.CodigoSeguridad || null,
+                r.Customer || null,
+                r.FechaHoraFirma || null,
+                r.TIPO_ECF || null,
+                r.TotalITBIS || null,
+                r.Total_amount || null,
+                r.codigo || null,
+                r.cf || null,
+                r.estado || null,
+                r.fechaRecepcion || null,
+                msgs || "",
+                r.secuenciaUtilizada ? 1 : 0,
+                r.trackId || null,
+                r.url || null,
+                r.xml || null,
+                JSON.stringify(resultData)
+            ]);
+
+            console.log("✅ Respuesta DGII guardada correctamente");
+
+        } catch (dbErr) {
+            console.error("❌ Error guardando en BD:", dbErr.message);
+        }
+
+        res.status(httpStatus).json(resultData);
+
+    } catch (error) {
+        console.error("❌ Error general:", error.message);
+        res.status(500).json({ error: "Error en proceso" });
+    }
+});
+
 /**
  * @route POST /real/enviar-factura
  * @desc Envía el JSON de la factura a Bitnova usando el Bearer Token
@@ -596,6 +950,9 @@ app.get('/real/empresas', async (req, res) => {
 
 
 
+
+
+
 /**
  * @route GET /real/debug-db
  * @desc Lista todas las tablas en la base de datos para verificación
@@ -714,8 +1071,11 @@ app.get('/real/debug-db', async (req, res) => {
     }
 });
 
+// Registrar ruta de notas
+app.post('/real/notas', notasController.crearNota);
+
 // Inicio del servidor
 app.listen(port, () => {
     console.log(`\n Servidor e-CF RD funcionando en http://localhost:${port}`);
-    console.log(` Conectado a base de datos: ${dbConfig.database}`);
+    console.log(` Conectado a base de datos: ${process.env.DB_NAME || 'facturacion_db'}`);
 });

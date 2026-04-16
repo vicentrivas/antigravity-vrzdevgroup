@@ -439,7 +439,7 @@
                 log('logSend', "headers =", headers);
                 log('logSend', "[El backend generará los 'datos_factura' automáticamente.");
 
-                const response = await fetch('/real/real/cargar-venta-by-idfacturacuota', {
+                const response = await fetch('/real/cargar-venta-by-idfacturacuota', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ idFacturaCuota, token })
