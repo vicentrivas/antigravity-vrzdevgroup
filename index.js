@@ -811,6 +811,6 @@ app.post('/real/create-send-notas', notasController.crearYEnviarNotaUnificado);
 
 // Inicio del servidor
 app.listen(port, () => {
-    console.log(`\n Servidor e-CF RD funcionando en http://localhost:${port}`);
-    console.log(` Conectado a base de datos: ${process.env.DB_NAME || 'facturacion_db'}`);
+    console.log(`\n Servidor e-CF RD funcionando`);
+
 });
