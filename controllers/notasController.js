@@ -362,7 +362,14 @@ const notasController = {
             }
 
             const v = rows[0][0];
+            const token2 = (token || v.emisor_token || "").trim();
+            if (!v.cf) {
+                return res.status(400).json({
+                    error: "No se generó el NCF (encf). No se puede enviar a DGII"
+                });
+            }
             const tipoEcf = v.cf.substring(1, 3);
+
             const eCF = {
                 iddoc: {
                     tipoecf: tipoEcf,
@@ -417,7 +424,7 @@ const notasController = {
                     eCF,
                     {
                         headers: {
-                            Authorization: token,
+                            Authorization: token2,
                             "Content-Type": "application/json"
                         },
                         timeout: 60000
@@ -454,10 +461,10 @@ const notasController = {
                     r.FechaHoraFirma || null,
                     r.TIPO_ECF || null,
                     r.TotalITBIS || null,
-                    r.Total_amount || null,
+                    v.valorneto || null,
 
                     r.codigo || null,
-                    r.cf || null,
+                    v.cf || null,
                     r.estado || null,
                     r.fechaRecepcion || null,
                     msgs,

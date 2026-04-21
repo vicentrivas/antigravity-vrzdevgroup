@@ -14,8 +14,15 @@ const indexController = require('./controllers/indexController.js');
 
 const upload = multer({ dest: 'uploads/' });
 
+const loggerMiddleware = require('./middlewares/loggerMiddleware');
+const authMiddleware = require('./middlewares/authMiddleware');
+
 app.use(express.json());
 app.use(express.static('public'));
+
+// Global Middlewares para Logs y Seguridad (API Key)
+app.use(loggerMiddleware);
+app.use(authMiddleware);
 
 
 app.put('/real/registrar-empresa', upload.single('archivo_p12'), async (req, res) => {
