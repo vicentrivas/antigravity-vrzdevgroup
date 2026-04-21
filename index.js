@@ -117,9 +117,7 @@ app.get('/real/validar-token', async (req, res) => {
     }
 });
 
- * @route POST / real / enviar - factura - id
-    * @desc Genera el JSON e - CF automáticamente desde el ID de la factura y la envía
-        */
+
 app.post('/real/cargar-venta-by-idfacturacuota', async (req, res) => {
     const { idFacturaCuota, token: providedToken } = req.body;
     if (!pool) return res.status(503).json({ error: "DB no disponible" });
