@@ -15,6 +15,7 @@ const pool = mysql.createPool(dbConfig);
 pool.getConnection()
     .then(connection => {
         console.log(" Intentando conectar a MySQL...");
+        console.log(" Configuración de BD: ", dbConfig);
         console.log(" Conexión a MySQL establecida.");
         connection.release();
     })
