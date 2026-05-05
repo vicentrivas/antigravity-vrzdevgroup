@@ -342,6 +342,280 @@ const indexController = {
             console.error("Error:", error.message);
             return res.status(500).json({ error: "Error interno del servidor" });
         }
+    },
+    enviarFacturaE31Id: async (req, res) => {
+        console.log(" NUEVO ENVIAR FACTURA");
+
+        const { idFacturaCuota, token: providedToken } = req.body;
+
+        if (!pool) {
+            return res.status(503).json({ error: "DB no disponible" });
+        }
+
+        if (!idFacturaCuota) {
+            return res.status(400).json({ error: "Falta idFacturaCuota" });
+        }
+
+        try {
+            const [rows] = await pool.query(
+                `CALL loadDatosFacturaCuotasDgiiE31(?)`,
+                [idFacturaCuota]
+            );
+
+            if (!rows || !rows[0] || rows[0].length === 0) {
+                return res.status(404).json({
+                    error: "No se encontró la cuota de factura"
+                });
+            }
+
+            const v = rows[0][0];
+
+            const clienteId = (v.cliente_identificacion || "").replace(/\D/g, "");
+            const token = (providedToken || v.emisor_token || "").trim();
+
+            const encf = v.ncf || "";
+            const tipoEcf = encf.substring(1, 3);
+
+            if (tipoEcf !== "31") {
+                return res.status(400).json({
+                    estado: "rechazado",
+                    error: "Este método solo permite enviar E31",
+                    detalle: {
+                        encf,
+                        tipoecf_detectado: tipoEcf
+                    }
+                });
+            }
+
+            if (!token) {
+                return res.status(400).json({
+                    estado: "rechazado",
+                    error: "Falta token de Bitnova/DGII"
+                });
+            }
+
+            /**
+             * E31 requiere RNC comprador de 9 dígitos.
+             */
+            if (clienteId.length !== 9) {
+                return res.status(400).json({
+                    estado: "rechazado",
+                    error: "E31 requiere RNC comprador de 9 dígitos",
+                    detalle: {
+                        encf,
+                        tipoecf: tipoEcf,
+                        cliente_identificacion: clienteId,
+                        longitud: clienteId.length,
+                        recomendacion: "Use E32 para consumidores con cédula"
+                    }
+                });
+            }
+            const cuotaBruto = parseFloat(v.cuota_bruto) || 0;
+            const cuotaItbis = parseFloat(v.cuota_itbis) || 0;
+            const cuotaTotal = parseFloat(v.cuota_total) || 0;
+
+            const nombres = (v.nombres || "").trim();
+            const apellidos = (v.apellidos || "").trim();
+
+            const razonSocialComprador = (
+                v.razonsocialcomprador ||
+                v.cliente_nombre ||
+                `${nombres} ${apellidos}`.trim()
+            );
+
+            const eCF = {
+                comprador: {
+                    contactocomprador: (v.contactocomprador || "01").toString(),
+                    correocomprador: v.correoelectronico || "",
+                    direccioncomprador: v.direccioncomprador || "",
+                    municipiocomprador: v.municipiocomprador || "",
+                    provinciacomprador: v.provinciacomprador || "",
+                    razonsocialcomprador: razonSocialComprador,
+                    rnccomprador: clienteId
+                },
+
+                datos_adicionales: {
+                    fechaemision: v.fecha,
+                    numerofacturainterna: v.referenciafactura || v.idfactura?.toString() || "",
+                    enviaraprobacion: false
+                },
+
+                iddoc: {
+                    encf,
+                    fechavencimientosecuencia: v.efechavencimiento || "31-12-2028",
+                    indicadormontogravado: (v.indicadormontogravado || "1").toString(),
+                    terminopago: v.terminopago || "Contado",
+                    tipoecf: "31",
+                    tipoingresos: (v.tipoingresos || "01").toString(),
+                    tipopago: parseInt(v.tipopago || 1)
+                },
+
+                items: {
+                    "1": {
+                        CantidadItem: "1",
+                        IndicadorBienOServicio: (v.indicadorbienoservicio || "2").toString(),
+                        IndicadorFacturacion: (v.indicadorfacturacion || "1").toString(),
+                        MontoItem: cuotaBruto.toFixed(2),
+                        NombreItem: v.nombreitem || `SERVICIO / PRODUCTO (${v.referenciafactura || encf})`,
+                        PrecioUnitarioItem: cuotaBruto.toFixed(2),
+                        UnidadMedida: (v.unidadmedida || "31").toString()
+                    }
+                },
+
+                totales: {
+                    itbis1: (v.itbis1 || "18").toString(),
+                    montogravadoi1: cuotaBruto.toFixed(2),
+                    montogravadototal: cuotaBruto.toFixed(2),
+                    montototal: cuotaTotal.toFixed(2),
+                    totalitbis: cuotaItbis.toFixed(2),
+                    totalitbis1: cuotaItbis.toFixed(2)
+                }
+            };
+
+
+
+            /**
+             * Validaciones mínimas antes de enviar.
+             */
+            if (!eCF.iddoc.encf) {
+                return res.status(400).json({
+                    estado: "rechazado",
+                    error: "Falta eNCF",
+                    json_enviado: eCF
+                });
+            }
+
+            if (!eCF.datos_adicionales.fechaemision) {
+                return res.status(400).json({
+                    estado: "rechazado",
+                    error: "Falta fecha de emisión",
+                    json_enviado: eCF
+                });
+            }
+
+            if (!eCF.comprador.razonsocialcomprador) {
+                return res.status(400).json({
+                    estado: "rechazado",
+                    error: "Falta razón social del comprador",
+                    json_enviado: eCF
+                });
+            }
+
+            const bitnovaUrl = "https://api.bitnovaservices.com/api/v1/dgii";
+
+            let resultData;
+            let httpStatus = 200;
+
+            try {
+                const response = await axios.post(bitnovaUrl, eCF, {
+                    headers: {
+                        Authorization: token,
+                        "Content-Type": "application/json"
+                    },
+                    timeout: 60000
+                });
+
+                resultData = {
+                    ...response.data,
+                    json_enviado: eCF
+                };
+
+            } catch (axiosError) {
+                httpStatus = axiosError.response?.status || 500;
+
+                console.error("STATUS BITNOVA:", axiosError.response?.status);
+                console.error("DATA BITNOVA:", JSON.stringify(axiosError.response?.data, null, 2));
+                console.error("JSON ENVIADO:", JSON.stringify(eCF, null, 2));
+
+                resultData = {
+                    ...(axiosError.response?.data || {}),
+                    error_local: axiosError.message,
+                    estado: axiosError.response?.data?.estado || "Rechazado LOCAL",
+                    json_enviado: eCF
+                };
+            }
+
+            /**
+             * Guardado DGII.
+             */
+            try {
+                const r = resultData.facturaAceptada || resultData.data || resultData;
+
+                const msgs = typeof r.mensajes === "object"
+                    ? JSON.stringify(r.mensajes)
+                    : (r.mensajes || resultData.mensajes || "");
+
+                const jsonGuardar = {
+                    httpStatus,
+                    error_local: resultData.error_local || null,
+                    estado_local: resultData.estado || null,
+                    respuesta_bitnova: resultData,
+                    json_enviado: eCF
+                };
+
+                await pool.query(`
+                INSERT INTO movimientofacturacfalmacenamientodgii (
+                    idfactura,
+                    idfacturacuotas,
+                    idnotadebitocredito,
+                    AlmacenamientoSesionEnCache,
+                    CodigoSeguridad,
+                    Customer,
+                    FechaHoraFirma,
+                    TIPO_ECF,
+                    TotalITBIS,
+                    Total_amount,
+                    codigo,
+                    encf,
+                    estado,
+                    fechaRecepcion,
+                    mensajes,
+                    secuenciaUtilizada,
+                    trackId,
+                    url,
+                    xml,
+                    json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+                    v.idfactura,
+                    v.idfacturacuotas,
+                    null,
+
+                    r.AlmacenamientoSesionEnCache ? 1 : 0,
+                    r.CodigoSeguridad || null,
+                    r.Customer || null,
+                    r.FechaHoraFirma || null,
+                    r.TIPO_ECF || eCF.iddoc.tipoecf || null,
+                    r.TotalITBIS || eCF.totales.totalitbis || null,
+                    r.Total_amount || eCF.totales.montototal || null,
+
+                    r.codigo || null,
+                    r.encf || eCF.iddoc.encf || null,
+                    r.estado || resultData.estado || "rechazado",
+                    r.fechaRecepcion || null,
+                    msgs || resultData.error || resultData.error_local || null,
+
+                    r.secuenciaUtilizada ? 1 : 0,
+                    r.trackId || null,
+                    r.url || null,
+                    r.xml || null,
+                    JSON.stringify(jsonGuardar)
+                ]);
+
+            } catch (dbErr) {
+                console.error("Error guardando DGII:", dbErr.message);
+            }
+
+            return res.status(httpStatus).json(resultData);
+
+        } catch (error) {
+            console.error("Error enviando E31:", error.message);
+
+            return res.status(500).json({
+                error: "Error interno del servidor",
+                detalle: error.message
+            });
+        }
     }
 };
 
